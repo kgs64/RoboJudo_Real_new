@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+
+# 设置为 True 时随主程序自动记录轨迹；设置为 False 时只启动主程序。
+RECORD_TRAJECTORY=True
+UNITREE_NET_IF="${UNITREE_NET_IF:-eth0}"
+
+# 神奇的xml文件用于解决连不上G1 low-state问题
+export CYCLONEDDS_URI="file://$(pwd)/cyclonedds.xml"
+
+# 手柄需插在台式服务器，而不是远端笔记本
+# export SDL_JOYSTICK_DEVICE=/dev/input/js0
+
+recorder_pid=""
+trajectory_trigger_dir=""
+trajectory_trigger_file=""
+trajectory_ready_file=""
+
+recording_enabled() {
+    case "${RECORD_TRAJECTORY}" in
+        True|true|TRUE)
+            return 0
+            ;;
+        False|false|FALSE)
+            return 1
+            ;;
+        *)
+            echo "Invalid RECORD_TRAJECTORY=${RECORD_TRAJECTORY}; use True or False." >&2
+            exit 2
+            ;;
+    esac
+}
+
+start_trajectory_recorder() {
+    if ! recording_enabled; then
+        unset ROBOJUDO_TRAJECTORY_START_FILE
+        unset ROBOJUDO_RECORD_DIR ROBOJUDO_RUN_ID
+        echo "Trajectory recording disabled."
+        return
+    fi
+
+    if ! trajectory_trigger_dir="$(mktemp -d "${TMPDIR:-/tmp}/robojudo-trajectory.XXXXXX")"; then
+        echo "Could not create trajectory recording trigger directory." >&2
+        exit 1
+    fi
+    trajectory_ready_file="${trajectory_trigger_dir}/ready"
+    unset ROBOJUDO_TRAJECTORY_START_FILE
+    mkdir -p logs
+    ROBOJUDO_RECORD_DIR="$(mktemp -d "logs/g1_run_$(date +%y%m%d-%H%M%S).XXXXXX")" || return 1
+    ROBOJUDO_RUN_ID="$(basename "${ROBOJUDO_RECORD_DIR}")"
+    export ROBOJUDO_RECORD_DIR ROBOJUDO_RUN_ID
+    echo "Synchronized recording directory: ${ROBOJUDO_RECORD_DIR}"
+
+    # The deployed unitree_sdk2py participant works with its automatic DDS
+    # configuration; keep RoboJuDo's CYCLONEDDS_URI only for the controller.
+    env -u LD_PRELOAD -u LD_LIBRARY_PATH -u CYCLONEDDS_URI \
+    /home/unitree/miniconda3/envs/robojudo/bin/python -u \
+    scripts/record_g1_trajectory.py \
+    --net-if "${UNITREE_NET_IF}" \
+    --output "${ROBOJUDO_RECORD_DIR}/state.msgpack" \
+    --run-id "${ROBOJUDO_RUN_ID}" \
+    --ready-file "${trajectory_ready_file}" &
+    recorder_pid=$!
+    wait_for_trajectory_recorder
+}
+
+wait_for_trajectory_recorder() {
+    local attempt
+    for attempt in {1..1500}; do
+        if [[ -e "${trajectory_ready_file}" ]]; then
+            echo "Trajectory recorder ready and recording (pid=${recorder_pid})."
+            return 0
+        fi
+        if ! kill -0 "${recorder_pid}" 2>/dev/null; then
+            wait "${recorder_pid}" 2>/dev/null || true
+            recorder_pid=""
+            echo "Trajectory recorder failed to initialize." >&2
+            return 1
+        fi
+        sleep 0.02
+    done
+
+    echo "Trajectory recorder initialization timed out." >&2
+    return 1
+}
+
+stop_trajectory_recorder() {
+    if [[ -n "${recorder_pid}" ]]; then
+        if kill -0 "${recorder_pid}" 2>/dev/null; then
+            kill -TERM "${recorder_pid}" 2>/dev/null || true
+        fi
+
+        if ! wait "${recorder_pid}"; then
+            echo "Trajectory recorder exited with an error." >&2
+        fi
+        recorder_pid=""
+    fi
+
+    if [[ -n "${trajectory_trigger_file}" ]]; then
+        rm -f -- "${trajectory_trigger_file}"
+        trajectory_trigger_file=""
+    fi
+    if [[ -n "${trajectory_ready_file}" ]]; then
+        rm -f -- "${trajectory_ready_file}"
+        trajectory_ready_file=""
+    fi
+    if [[ -n "${trajectory_trigger_dir}" ]]; then
+        rmdir -- "${trajectory_trigger_dir}" 2>/dev/null || true
+        trajectory_trigger_dir=""
+    fi
+    unset ROBOJUDO_TRAJECTORY_START_FILE
+    unset ROBOJUDO_RECORD_DIR ROBOJUDO_RUN_ID
+}
+
+on_exit() {
+    local controller_status=$?
+    trap - EXIT INT TERM
+    stop_trajectory_recorder
+    exit "${controller_status}"
+}
+
+handle_signal() {
+    exit "$1"
+}
+
+run_controller() {
+    env -u LD_PRELOAD -u LD_LIBRARY_PATH -u CYCLONEDDS_URI \
+        python -u scripts/run_pipeline.py \
+        -c g1_native_loco_mimic_23dof_backpack
+}
+
+trap on_exit EXIT
+trap 'handle_signal 130' INT
+trap 'handle_signal 143' TERM
+
+if ! start_trajectory_recorder; then
+    exit 1
+fi
+run_controller
+controller_status=$?
+exit "${controller_status}"

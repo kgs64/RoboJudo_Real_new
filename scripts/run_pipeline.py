@@ -1,0 +1,115 @@
+# Fix OMP perfmance issue on ARM platform (Jetson)
+import os
+import platform
+
+if platform.machine().startswith("aarch64"):
+    os.environ["OMP_NUM_THREADS"] = "1"
+
+import argparse
+import logging
+import time
+
+import robojudo.pipeline
+from robojudo.config.config_manager import ConfigManager
+from robojudo.pipeline.pipeline_cfgs import RlPipelineCfg
+from robojudo.pipeline.rl_pipeline import RlPipeline
+
+logger = logging.getLogger("robojudo")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-c",
+        "--config",
+        type=str,
+        default="g1_beyondmimic_23dof", # g1_real_loco_mimic | g1_real_fada_planner_idm
+        # RlPipeline: g1 | g1_beyondmimic | g1_asap | g1_real
+        # RlLocoMimicPipeline: g1_locomimic_beyondmimic | g1_locomimic_asap | g1_real_loco_mimic
+        help="Name of the config class to use",)
+    
+    args = parser.parse_args()
+    return args
+
+
+def main():
+    args = parse_args()
+    logger.info(f"Using config: {args.config}")
+
+    # get cfg from register (Import-Time Registry)
+    config_manager = ConfigManager(config_name=args.config)
+    cfg: RlPipelineCfg = config_manager.get_cfg()
+
+    # pipeline_type locate at pipeline_cfgs.py
+    pipeline_type = cfg.pipeline_type
+
+    # getattr(obj, name): find attr name in obj, return class (not instance)
+    pipeline_class: type[RlPipeline] = getattr(robojudo.pipeline, pipeline_type)
+    logger.info(f"Using pipeline: {pipeline_type} -> {pipeline_class}")
+
+    # instantiate choosen pipeline class
+    pipeline = pipeline_class(cfg=cfg)
+
+    print("\n")
+    print(f"cfg.device: {cfg.device}")
+    print("\n")
+
+    try:
+        record_dir = os.environ.get("ROBOJUDO_RECORD_DIR")
+        if record_dir:
+            pipeline.configure_motion_trace(record_dir, os.environ.get("ROBOJUDO_RUN_ID", record_dir))
+        # if mujoco = False
+        if not cfg.env.is_sim:
+            pipeline._motion_trace_phase = "preparing"
+            pipeline.trace_event("lifecycle", phase="prepare_start")
+            pipeline.prepare()
+            pipeline.trace_event("lifecycle", phase="prepare_end")
+        pipeline._motion_trace_phase = "playing"
+
+        # continue execute step
+        while not getattr(pipeline, "should_stop", False):
+            time_start = time.time()
+            pipeline.step()
+            time_end = time.time()
+            time_diff = time_end - time_start
+
+            # keep the pipeline running at the desired frequency
+            if not cfg.run_fullspeed:
+                time_diff = pipeline.dt - time_diff
+                if time_diff > 0:
+                    time.sleep(time_diff)
+                elif not cfg.env.is_sim:
+                    logger.error(f"Warning: frame drop -> {time_diff}")
+                    if time_diff < -0.2:
+                        logger.critical("Exiting due to excessive frame drop")
+                        pipeline.env.shutdown()
+                        time.sleep(10)
+                        break
+    except KeyboardInterrupt:
+        logger.warning("Interrupted by user")
+    finally:
+        try:
+            close = getattr(pipeline, "close", None)
+            if callable(close):
+                close_result = 1
+                while close_result not in (None, 0):
+                    try:
+                        close_result = close()
+                        if close_result not in (None, 0):
+                            logger.critical(
+                                "Control release is not confirmed; keeping the process "
+                                "alive and retrying close: %s",
+                                close_result,
+                            )
+                            time.sleep(0.5)
+                    except KeyboardInterrupt:
+                        logger.critical(
+                            "Control release is still pending; ignoring interrupt while "
+                            "the controller remains active"
+                        )
+        finally:
+            pipeline.close_motion_trace()
+
+
+if __name__ == "__main__":
+    main()

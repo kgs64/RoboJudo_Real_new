@@ -1,0 +1,599 @@
+from __future__ import annotations
+from typing import List, Union
+from robojudo.config import cfg_registry
+
+from robojudo.controller.ctrl_cfgs import (
+    JoystickCtrlCfg,  # noqa: F401
+    KeyboardCtrlCfg,  # noqa: F401
+    UnitreeCtrlCfg,)  # noqa: F401
+
+from robojudo.pipeline.pipeline_cfgs import (
+    RlLocoMimicPipelineCfg,  # noqa: F401
+    RlMultiPolicyPipelineCfg,  # noqa: F401
+    RlPipelineCfg,)  # noqa: F401
+
+# ======================== Ctrl Configs ======================== #
+from .ctrl.g1_beyondmimic_ctrl_cfg import G1BeyondmimicCtrlCfg  # noqa: F401
+from .ctrl.g1_motion_ctrl_cfg import (  # noqa: F401
+    G1MotionCtrlCfg,
+    G1MotionH2HCtrlCfg,
+    G1MotionKungfuBotCtrlCfg,
+    G1MotionTwistCtrlCfg,)
+from .ctrl.g1_twist_redis_ctrl_cfg import G1TwistRedisCtrlCfg  # noqa: F401
+
+# ======================== Env Configs ======================== #
+from .env.g1_dummy_env_cfg import G1DummyEnvCfg  # noqa: F401
+from .env.g1_env_cfg import G1UniLabMujocoDoF  # noqa: F401
+from .env.g1_mujuco_env_cfg import (
+    G1_12MujocoEnvCfg, 
+    G1_23BackpackMujocoEnvCfg,
+    G1_23MujocoEnvCfg, 
+    G1MujocoEnvCfg,
+    G1UniLabMujocoEnvCfg,)  # noqa: F401
+from .env.g1_real_env_cfg import G1RealEnvCfg, G1UnitreeCfg  # noqa: F401
+
+# ======================== Policy Configs ======================== #
+from .policy.g1_amo_policy_cfg import G1AmoPolicyCfg  # noqa: F401
+from .policy.g1_asap_policy_cfg import (
+    G1AsapLocoPolicyCfg, 
+    G1AsapPolicyCfg,)  # noqa: F401
+from .policy.g1_beyondmimic_policy_cfg import (
+    G1BeyondMimic23DoFPolicyCfg,
+    G1BeyondMimicPolicyCfg,)  # noqa: F401
+from .policy.g1_h2h_policy_cfg import G1H2HPolicyCfg  # noqa: F401
+from .policy.g1_kungfubot_policy_cfg import (
+    G1KungfuBotGeneralPolicyCfg, 
+    G1KungfuBotPolicyCfg,)  # noqa: F401
+from .policy.g1_smooth_policy_cfg import G1SmoothPolicyCfg  # noqa: F401
+from .policy.g1_twist_policy_cfg import G1TwistPolicyCfg  # noqa: F401
+from .policy.g1_unitree_policy_cfg import (
+    G1UnitreePolicyCfg, 
+    G1UnitreeWoGaitPolicyCfg,)  # noqa: F401
+from .policy.g1_unilab_policy_cfg import (  # noqa: F401
+    G1UniLabDoF,
+    G1UniLabDistillPolicyCfg,
+    G1UniLabPolicyCfg,
+)
+from .policy.g1_fada_policy_cfg import G1FADAPlannerIDMPolicyCfg  # noqa: F401
+
+
+UNILAB_G1_STAND_ROOT_QPOS: list[float] = [0.0, 0.0, 0.754, 1.0, 0.0, 0.0, 0.0]
+UNILAB_G1_STAND_QPOS: list[float] = [
+    *UNILAB_G1_STAND_ROOT_QPOS,
+    *G1UniLabDoF().default_pos,
+]
+
+
+# ======================== Basic Configs ======================== #
+@cfg_registry.register
+class g1(RlPipelineCfg): # Sim2Sim
+    """
+    Unitree G1 robot configuration, Unitree Policy.
+    You can modify to play with other policies and controllers.
+    """
+
+    robot: str = "g1"
+    env: G1MujocoEnvCfg = G1MujocoEnvCfg()
+    # env: G1_23MujocoEnvCfg = G1_23MujocoEnvCfg()
+    # env: G1_12MujocoEnvCfg = G1_12MujocoEnvCfg()
+
+    # py3.10 -> py3.8
+    # ctrl: list[JoystickCtrlCfg | KeyboardCtrlCfg] = [  # note: the ranking of controllers matters
+    ctrl: List[Union[JoystickCtrlCfg, KeyboardCtrlCfg]] = [
+        JoystickCtrlCfg(),
+        # KeyboardCtrlCfg(),
+    ]
+
+    # policy: G1UnitreePolicyCfg = G1UnitreePolicyCfg()
+    # policy: G1UnitreeWoGaitPolicyCfg = G1UnitreeWoGaitPolicyCfg()
+    # policy: G1AmoPolicyCfg = G1AmoPolicyCfg()
+    policy: G1AsapLocoPolicyCfg = G1AsapLocoPolicyCfg()
+
+    # run_fullspeed: bool = env.is_sim
+
+
+@cfg_registry.register
+class g1_real(g1): # Sim2Real
+    """
+    Unitree G1 robot, Unitree Policy.
+    To extend the sim2sim config to sim2real, just need to change the env to real env.
+    """
+
+    # env: G1DummyEnvCfg = G1DummyEnvCfg()
+    env: G1RealEnvCfg = G1RealEnvCfg(
+        env_type="UnitreeEnv",  # For unitree_sdk2py
+        # env_type="UnitreeCppEnv",  # For unitree_cpp, check README for more details
+        unitree=G1UnitreeCfg(
+            net_if="enp211s0f1np1",  # note: change to your network interface
+        ),
+    )
+
+    ctrl: list[UnitreeCtrlCfg] = [
+        UnitreeCtrlCfg(),
+    ]
+
+    do_safety_check: bool = True  # enable safety check for real robot
+
+
+@cfg_registry.register
+class g1_unilab(RlPipelineCfg): # Sim2Sim
+    """
+    Unitree G1 robot configuration, UniLab G1WalkFlat Policy.
+    """
+
+    robot: str = "g1"
+    env: G1MujocoEnvCfg = G1MujocoEnvCfg(
+        dof=G1UniLabMujocoDoF(),
+        init_qpos=UNILAB_G1_STAND_QPOS,
+        sim_dt=0.02 / 3.0,
+        sim_decimation=3,
+    )
+
+    ctrl: List[Union[JoystickCtrlCfg, KeyboardCtrlCfg]] = [
+        JoystickCtrlCfg(),
+        # KeyboardCtrlCfg(),
+    ]
+
+    policy: G1UniLabPolicyCfg = G1UniLabPolicyCfg()
+
+
+@cfg_registry.register
+class g1_unilab_distill(RlPipelineCfg):  # Sim2Sim
+    """UniLab G1 stand-height/walk DAgger student in MuJoCo."""
+
+    robot: str = "g1"
+    env: G1UniLabMujocoEnvCfg = G1UniLabMujocoEnvCfg()
+
+    ctrl: List[Union[JoystickCtrlCfg, KeyboardCtrlCfg]] = [
+        KeyboardCtrlCfg(),
+    ]
+
+    policy: G1UniLabDistillPolicyCfg = G1UniLabDistillPolicyCfg()
+
+
+@cfg_registry.register
+class g1_fada_planner_idm(RlPipelineCfg):  # Sim2Sim
+    """Native FADA Planner-IDM policy in the UniLab-aligned G1 MuJoCo scene."""
+
+    robot: str = "g1"
+    env: G1UniLabMujocoEnvCfg = G1UniLabMujocoEnvCfg()
+    ctrl: List[Union[JoystickCtrlCfg, KeyboardCtrlCfg]] = [KeyboardCtrlCfg()]
+    policy: G1FADAPlannerIDMPolicyCfg = G1FADAPlannerIDMPolicyCfg()
+
+
+@cfg_registry.register
+class g1_real_fada_planner_idm(g1_fada_planner_idm):  # Sim2Real
+    """Native FADA Planner-IDM policy on a physical Unitree G1."""
+
+    env: G1RealEnvCfg = G1RealEnvCfg(
+        env_type="UnitreeCppEnv",
+        odometry_type="NONE",
+        unitree=G1UnitreeCfg(
+            net_if="enp130s0",
+            enable_odometry=False,
+            enable_torso_imu=True,
+        ),
+    )
+    ctrl: List[KeyboardCtrlCfg] = [KeyboardCtrlCfg()]
+    do_safety_check: bool = True
+
+
+@cfg_registry.register
+class g1_real_unilab(g1_unilab): # Sim2Real
+    """
+    Unitree G1 robot configuration, UniLab G1WalkFlat Policy.
+    """
+
+    env: G1RealEnvCfg = G1RealEnvCfg(
+        env_type="UnitreeCppEnv",
+        unitree=G1UnitreeCfg(
+            net_if="eth0",
+        ),
+    )
+
+    ctrl: List[Union[UnitreeCtrlCfg, JoystickCtrlCfg]] = [
+        UnitreeCtrlCfg(),
+        JoystickCtrlCfg(),
+    ]
+
+    do_safety_check: bool = True
+
+
+@cfg_registry.register
+class g1_real_loco_mimic(RlLocoMimicPipelineCfg): # Sim2Real
+    """
+    Unitree G1 robot, Unitree Policy.
+    To extend the sim2sim config to sim2real, just need to change the env to real env.
+    """
+    robot: str = "g1"
+
+    # device: str = "cuda:0"
+
+    # env: G1DummyEnvCfg = G1DummyEnvCfg()
+    env: G1RealEnvCfg = G1RealEnvCfg(
+        # env_type="UnitreeEnv",  # For unitree_sdk2py
+        env_type="UnitreeCppEnv",  # For unitree_cpp, check README for more details
+        unitree=G1UnitreeCfg(
+            net_if="eth0",  # note: change to your network interface enp211s0f1np1 | eth0, 
+        ),
+    )
+
+    # py3.10 -> py3.8
+    # ctrl: list[UnitreeCtrlCfg | JoystickCtrlCfg] = [
+    
+    # ctrl: List[Union[UnitreeCtrlCfg, JoystickCtrlCfg]] = [
+    #     UnitreeCtrlCfg(),
+    #     # "A": "[SHUTDOWN]", # damping
+    #     # "X": "[MOTION_FADE_IN]",
+    #     # "B": "[MOTION_FADE_OUT]",
+    #     # "Y": "[MOTION_RESET]",
+    #     JoystickCtrlCfg(
+    #         triggers_extra={
+    #             "RB+Down": "[POLICY_LOCO]",
+    #             "RB+Up": "[POLICY_MIMIC]",
+    #             "RB+Left": "[POLICY_SWITCH],LAST",
+    #             "RB+Right": "[POLICY_SWITCH],NEXT",
+    #         }
+    #     ),
+    # ]
+
+    ctrl: List[Union[JoystickCtrlCfg]] = [
+        JoystickCtrlCfg(
+            triggers_extra={
+                "RB+Down": "[POLICY_LOCO]",
+                "RB+Up": "[POLICY_MIMIC]",
+                "RB+Left": "[POLICY_SWITCH],LAST",
+                "RB+Right": "[POLICY_SWITCH],NEXT",
+            }
+        ),
+    ]
+
+    # ctrl: List[Union[KeyboardCtrlCfg, JoystickCtrlCfg]] = [
+    #     KeyboardCtrlCfg(
+    #         triggers_extra={
+    #             "i": "[SIM_REBORN]",
+    #             "o": "[SHUTDOWN]",
+    #             "]": "[POLICY_LOCO]",
+    #             "[": "[POLICY_MIMIC]",
+    #             ";": "[POLICY_SWITCH],NEXT",
+    #             "'": "[POLICY_SWITCH],LAST",
+    #         }
+    #     ),
+    #     JoystickCtrlCfg(
+    #         triggers_extra={
+    #             "RB+Down": "[POLICY_LOCO]",
+    #             "RB+Up": "[POLICY_MIMIC]",
+    #         }
+    #     ),
+    # ]
+
+    # loco_policy: G1UnitreeWoGaitPolicyCfg = G1UnitreeWoGaitPolicyCfg()
+    # loco_policy: G1AmoPolicyCfg = G1AmoPolicyCfg()
+    loco_policy: G1AsapLocoPolicyCfg = G1AsapLocoPolicyCfg()
+    mimic_policies: list[G1BeyondMimicPolicyCfg] = [
+        # G1BeyondMimicPolicyCfg(policy_name="g1_dance2", without_state_estimator=False, max_timestep=1000),
+        G1BeyondMimicPolicyCfg(policy_name="wave-single-2-lz", without_state_estimator=False, max_timestep=400),
+        G1BeyondMimicPolicyCfg(policy_name="intro-facing-2-lz", without_state_estimator=False, max_timestep=300),
+    ]
+
+    do_safety_check: bool = True  # enable safety check for real robot
+
+
+@cfg_registry.register
+class g1_switch(RlMultiPolicyPipelineCfg): # Sim2Sim
+    """
+    Example of multi-policy pipeline configuration.
+    """
+
+    robot: str = "g1"
+    env: G1MujocoEnvCfg = G1MujocoEnvCfg()
+
+    # py3.10 -> py3.8
+    # ctrl: list[KeyboardCtrlCfg | JoystickCtrlCfg] = [
+    ctrl: List[Union[KeyboardCtrlCfg, JoystickCtrlCfg]] = [
+        # KeyboardCtrlCfg(
+        #     triggers_extra={
+        #         "Key.tab": "[POLICY_TOGGLE]",
+        #     }
+        # ),
+        JoystickCtrlCfg(
+            triggers_extra={
+                "RB+Down": "[POLICY_SWITCH],0",
+                "RB+Up": "[POLICY_SWITCH],1",
+            }
+        ),
+    ]
+
+    policies: list[G1UnitreePolicyCfg | G1AmoPolicyCfg] = [
+        G1UnitreePolicyCfg(),
+        G1AmoPolicyCfg(),
+    ]
+
+
+@cfg_registry.register
+class g1_locomimic(RlLocoMimicPipelineCfg): # Sim2Sim
+    """
+    Example of loco mimic pipeline configuration.
+    You can switch between loco and mimic policies during runtime, with interpolation.
+    === Check more fancy locomimic examples in g1_loco_mimic_cfg.py ===
+    """
+
+    robot: str = "g1"
+    env: G1MujocoEnvCfg = G1MujocoEnvCfg()
+
+    # py3.10 -> py3.8
+    # ctrl: list[KeyboardCtrlCfg | JoystickCtrlCfg] = [
+    ctrl: List[Union[KeyboardCtrlCfg, JoystickCtrlCfg]] = [
+        KeyboardCtrlCfg(
+            triggers_extra={
+                "i": "[SIM_REBORN]",
+                "o": "[SHUTDOWN]",
+                "]": "[POLICY_LOCO]",
+                "[": "[POLICY_MIMIC]",
+                ";": "[POLICY_SWITCH],NEXT",
+                "'": "[POLICY_SWITCH],LAST",
+            }
+        ),
+        JoystickCtrlCfg(
+            triggers_extra={
+                "RB+Down": "[POLICY_LOCO]",
+                "RB+Up": "[POLICY_MIMIC]",
+            }
+        ),
+    ]
+
+    loco_policy: G1UnitreeWoGaitPolicyCfg = G1UnitreeWoGaitPolicyCfg()
+    mimic_policies: list[G1BeyondMimicPolicyCfg] = [
+        G1BeyondMimicPolicyCfg(policy_name="g1_dance2", without_state_estimator=False, max_timestep=1000),
+    ]
+
+
+# ======================== Configs for supported Policy ======================== #
+
+
+@cfg_registry.register
+class g1_h2h(RlPipelineCfg): # Sim2Sim
+    """
+    Human2Humanoid
+    """
+
+    robot: str = "g1"
+    env: G1MujocoEnvCfg = G1MujocoEnvCfg()
+
+    # py3.10 -> py3.8
+    # ctrl: list[KeyboardCtrlCfg | G1MotionH2HCtrlCfg] = [
+    ctrl: List[Union[KeyboardCtrlCfg, G1MotionH2HCtrlCfg]] = [
+        KeyboardCtrlCfg(),
+        G1MotionH2HCtrlCfg(),
+    ]
+
+    policy: G1H2HPolicyCfg = G1H2HPolicyCfg()
+
+
+@cfg_registry.register
+class g1_beyondmimic(RlPipelineCfg): # Sim2Sim
+    """
+    BeyondMimic Policy, support both with and without state estimator.
+    """
+
+    robot: str = "g1"
+    env: G1MujocoEnvCfg = G1MujocoEnvCfg()
+    ctrl: list[KeyboardCtrlCfg] = [
+        KeyboardCtrlCfg(),
+    ]
+
+    policy: G1BeyondMimicPolicyCfg = G1BeyondMimicPolicyCfg(
+        policy_name="Jump_wose",
+        without_state_estimator=True,
+        use_modelmeta_config=True,  # use robot dof config from modelmeta
+        use_motion_from_model=True,  # use motion from onnx model
+        max_timestep=140,
+    )
+
+
+@cfg_registry.register
+class g1_beyondmimic_23dof(RlPipelineCfg): # Sim2Sim
+    """Native G1 23DoF BeyondMimic policy using ONNX model metadata."""
+
+    robot: str = "g1"
+    env: G1_23MujocoEnvCfg = G1_23MujocoEnvCfg()
+    ctrl: list[KeyboardCtrlCfg] = [
+        KeyboardCtrlCfg(),
+    ]
+
+    policy: G1BeyondMimic23DoFPolicyCfg = G1BeyondMimic23DoFPolicyCfg(
+        policy_name = "eight_cut_3",
+        without_state_estimator=False,
+        use_modelmeta_config=True,
+        use_motion_from_model=True,
+        max_timestep=11244,
+    )
+
+
+@cfg_registry.register
+class g1_beyondmimic_23dof_backpack(RlPipelineCfg):  # Sim2Sim
+    """G1 23DoF BeyondMimic policy with the 0.8 kg backpack model."""
+
+    robot: str = "g1"
+    env: G1_23BackpackMujocoEnvCfg = G1_23BackpackMujocoEnvCfg()
+    ctrl: list[KeyboardCtrlCfg] = [KeyboardCtrlCfg()]
+    policy: G1BeyondMimic23DoFPolicyCfg = G1BeyondMimic23DoFPolicyCfg(
+        policy_name="eight_cut_1_backpack",
+        without_state_estimator=False,
+        use_modelmeta_config=True,
+        use_motion_from_model=True,
+        max_timestep=11252,
+    )
+
+
+@cfg_registry.register
+class g1_beyondmimic_with_ctrl(RlPipelineCfg): # Sim2Sim
+    """
+    BeyondMimic with External BeyondMimicCtrl as motion source.
+    """
+
+    robot: str = "g1"
+    env: G1MujocoEnvCfg = G1MujocoEnvCfg()
+
+    # py3.10 -> py3.8
+    # ctrl: list[KeyboardCtrlCfg | G1BeyondmimicCtrlCfg] = [
+    ctrl: List[Union[KeyboardCtrlCfg, G1BeyondmimicCtrlCfg]] = [
+        KeyboardCtrlCfg(),
+        G1BeyondmimicCtrlCfg(
+            motion_name="dance1_subject2",  # you can put your own motion file in assets/motions/g1
+        ),
+    ]
+
+    policy: G1BeyondMimicPolicyCfg = G1BeyondMimicPolicyCfg(
+        policy_name="Dance_wose",
+        use_motion_from_model=False,  # use motion from BeyondmimicCtrl instead of the onnx
+    )
+
+
+@cfg_registry.register
+class g1_asap(RlPipelineCfg): # Sim2Sim
+    """
+    Unitree G1 robot configuration, ASAP Policy, Sim2Sim.
+    You can modify to play with other policies and controllers.
+    """
+
+    robot: str = "g1"
+    env: G1MujocoEnvCfg = G1MujocoEnvCfg(forward_kinematic=None, update_with_fk=False, born_place_align=True)
+
+    # py3.10 -> py3.8
+    # ctrl: list[JoystickCtrlCfg | KeyboardCtrlCfg] = [  # note: the ranking of controllers matters
+    ctrl: List[Union[JoystickCtrlCfg, KeyboardCtrlCfg]] = [
+        # JoystickCtrlCfg(),
+        KeyboardCtrlCfg(triggers={"i": "[SIM_REBORN]", "o": "[SHUTDOWN]", "r": "[MOTION_RESET]"}),
+    ]
+
+    policy: G1AsapPolicyCfg = G1AsapPolicyCfg()
+    """You can also try other models, from ASAP, RoboMimic, KungfuBot(PBHC)"""
+    # policy: G1KungfuBotPolicyCfg = G1KungfuBotPolicyCfg() # KungfuBot horse_squat
+    # # fmt: off
+    # policy: G1AsapPolicyCfg = G1AsapPolicyCfg(
+    #     policy_name="robomimic",
+    #     relative_path="dance_0605.onnx",
+    #     motion_length_s=18.0,
+    #     start_upper_body_dof_pos = [
+    #         0, 0, 0,
+    #         0.35, 0.18, 0, 0.87,
+    #         0.35, -0.18, 0, 0.87,
+    #     ],
+    # )
+    # # fmt: on
+
+
+@cfg_registry.register
+class g1_asap_loco(RlPipelineCfg): # Sim2Sim
+    """
+    Unitree G1 robot configuration, ASAP Locomotion Policy, Sim2Sim.
+    You can modify to play with other policies and controllers.
+    """
+
+    robot: str = "g1"
+    env: G1MujocoEnvCfg = G1MujocoEnvCfg(forward_kinematic=None, update_with_fk=False, born_place_align=False)
+
+    # py3.10 -> py3.8
+    # ctrl: list[JoystickCtrlCfg | KeyboardCtrlCfg] = [  # note: the ranking of controllers matters
+    ctrl: List[Union[JoystickCtrlCfg, KeyboardCtrlCfg]] = [
+        # JoystickCtrlCfg(),
+        KeyboardCtrlCfg(
+            triggers={
+                "i": "[SIM_REBORN]",
+                "o": "[SHUTDOWN]",
+            }
+        ),
+    ]
+
+    policy: G1AsapLocoPolicyCfg = G1AsapLocoPolicyCfg()
+
+
+@cfg_registry.register
+class g1_kungfubot2(RlPipelineCfg): # Sim2Sim
+    """
+    PBHC KungfuBot2 General Policy
+    """
+
+    robot: str = "g1"
+    env: G1MujocoEnvCfg = G1MujocoEnvCfg()
+
+    # py3.10 -> py3.8
+    # ctrl: list[KeyboardCtrlCfg | G1MotionKungfuBotCtrlCfg] = [
+    ctrl: List[Union[KeyboardCtrlCfg, G1MotionKungfuBotCtrlCfg]] = [
+        KeyboardCtrlCfg(),
+        G1MotionKungfuBotCtrlCfg(
+            motion_name="kungfubot/Horse-stance_pose",  # put motion files in assets/motions/g1/phc/kungfubot
+        ),
+    ]
+
+    policy: G1KungfuBotGeneralPolicyCfg = G1KungfuBotGeneralPolicyCfg(
+        policy_name="horse_test_43000",  # this is a test model trained with only one motion
+        compatibility_old_version=True,  # for old version of kungfubot general policy (before 2025-11-13 bugfix #68)
+    )
+
+
+@cfg_registry.register
+class g1_twist(RlPipelineCfg): # Sim2Sim
+    """
+    Unitree G1 robot configuration, TWIST Policy, Sim2Sim.
+    TwistRedisCtrl for the original repo of high level motion stream over redis.
+    MotionTwistCtrl for built-in motion control.
+    """
+
+    robot: str = "g1"
+    env: G1MujocoEnvCfg = G1MujocoEnvCfg(forward_kinematic=None, update_with_fk=False, born_place_align=False)
+
+    # py3.10 -> py3.8
+    # ctrl: list[G1TwistRedisCtrlCfg | G1MotionTwistCtrlCfg] = [  # note: the ranking of controllers matters
+    ctrl: List[Union[G1TwistRedisCtrlCfg, G1MotionTwistCtrlCfg]] = [
+        G1TwistRedisCtrlCfg(redis_host="localhost"),  # with hign level motion lib through redis
+        # G1MotionTwistCtrlCfg(), # with built-in motion ctrl
+    ]
+
+    policy: G1TwistPolicyCfg = G1TwistPolicyCfg()
+
+
+# ======================== Fancy Example Configs ======================== #
+
+
+@cfg_registry.register
+class g1_switch_beyondmimic(RlMultiPolicyPipelineCfg): # Sim2Sim
+    """
+    Switch between multiple BeyondMimic policies. Withour Interpolation.
+    """
+
+    robot: str = "g1"
+    env: G1MujocoEnvCfg = G1MujocoEnvCfg()
+
+    # py3.10 -> py3.8
+    # ctrl: list[KeyboardCtrlCfg | JoystickCtrlCfg] = [
+    ctrl: List[Union[KeyboardCtrlCfg, JoystickCtrlCfg]] = [
+        KeyboardCtrlCfg(
+            triggers_extra={
+                "Key.tab": "[POLICY_TOGGLE]",
+                "!": "[POLICY_SWITCH],0",  # note: with shift
+                "@": "[POLICY_SWITCH],1",  # note: with shift
+                "#": "[POLICY_SWITCH],2",  # note: with shift
+                "$": "[POLICY_SWITCH],3",  # note: with shift
+            }
+        ),
+        JoystickCtrlCfg(
+            triggers_extra={
+                "RB+Down": "[POLICY_SWITCH],0",
+                "RB+Left": "[POLICY_SWITCH],1",
+                "RB+Up": "[POLICY_SWITCH],2",
+                "RB+Right": "[POLICY_SWITCH],3",
+            }
+        ),
+    ]
+
+    policies: list[G1AmoPolicyCfg | G1BeyondMimicPolicyCfg] = [
+        G1AmoPolicyCfg(),
+        G1BeyondMimicPolicyCfg(policy_name="Violin", without_state_estimator=False, max_timestep=500),
+        G1BeyondMimicPolicyCfg(policy_name="Waltz", without_state_estimator=False, max_timestep=850),
+        G1BeyondMimicPolicyCfg(policy_name="Dance_wose", without_state_estimator=True),
+    ]
+
+
+# TIPS: check g1_loco_mimic_cfg.py for more complex examples
